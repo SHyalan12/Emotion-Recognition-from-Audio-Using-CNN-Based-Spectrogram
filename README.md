@@ -56,6 +56,9 @@ Similar to Song workflow, with additional real-world audio clip testing step:
 - **Real-world Audio Testing:** Test final model on real-world audio samples.
 
 ## Execution Instructions
-1. Upload all files to Google Drive. (only Final_Model and Final_Augmented_Dataset are needed in running our)
-2. Verify and adjust the data path in each Python notebook as needed.
-3. Run the notebooks directly in Google Colab.
+1. Upload all files to Google Drive. (only Final_Model and Final_Augmented_Dataset are needed in running our final model)
+  -augmented_spectrograms_dataset_song is the dataset for Final_model_song
+  -augmented_spectrograms_dataset_speech is the dataset for Final_model_speech
+  -Lecture_recording.png can be used for testing real world recording
+3. Verify and adjust the data path in each Python notebook as needed.
+4. Run the notebooks directly in Google Colab.
