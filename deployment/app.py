@@ -129,7 +129,26 @@ def predict_my_model(audio_path: str, mode: str):
 # ── Inference: pre-trained baseline ───────────────────────────────────────────
 def predict_pretrained(audio_path: str):
     pipe = get_pretrained()
-    results = pipe(audio_path, top_k=8)
+
+    # Explicitly resample to 16 kHz (Wav2Vec2's training rate).
+    # The HF pipeline sometimes skips auto-resampling, leading to flat/random output.
+    audio, _ = librosa.load(audio_path, sr=16000, mono=True)
+    print(f"[pretrained] audio: {len(audio)} samples @ 16kHz "
+          f"({len(audio)/16000:.1f}s), max amp: {np.abs(audio).max():.3f}")
+
+    if len(audio) < 8000:  # less than 0.5s
+        return ("<p style='color:#fbbf24;padding:12px;'>⚠️ Audio is too short. "
+                "Please record at least 2 seconds.</p>", "")
+    if np.abs(audio).max() < 0.01:
+        return ("<p style='color:#fbbf24;padding:12px;'>⚠️ Audio is silent or too quiet. "
+                "Please speak louder or check your mic.</p>", "")
+
+    # Normalize amplitude to help the model
+    audio = audio / (np.abs(audio).max() + 1e-9)
+
+    # Pass as raw array with explicit sampling rate (bypasses pipeline's file decoding)
+    results = pipe({"sampling_rate": 16000, "raw": audio}, top_k=8)
+
     label_map = {}
     for r in results:
         name = r["label"].lower()
