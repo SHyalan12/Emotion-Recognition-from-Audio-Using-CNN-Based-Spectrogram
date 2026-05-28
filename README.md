@@ -1,5 +1,7 @@
 # Emotion Recognition from Audio Using CNN-Based Spectrogram Analysis
 
+🚀 **Live demo:** https://huggingface.co/spaces/shhyalan/emotion-recognition
+📁 **Deployment code:** [`deployment/`](./deployment)
 
 This project consists of Python notebooks designed to run on Google Colab, utilizing datasets stored on Google Drive. Follow the instructions below for proper setup and execution.
 

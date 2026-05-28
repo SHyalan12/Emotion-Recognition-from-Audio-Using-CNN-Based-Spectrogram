@@ -1,0 +1,12 @@
+# Model weights — upload separately via HF hub (too large for git)
+models/*.h5
+models/*.keras
+models/*.pb
+
+# Python
+__pycache__/
+*.pyc
+.env
+
+# macOS
+.DS_Store
