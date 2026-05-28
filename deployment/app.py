@@ -1,3 +1,27 @@
+# ── Patch gradio_client schema bug (MUST run before importing gradio) ────────
+# Bug: when JSON schemas have `additionalProperties: true/false` (bool instead
+# of dict), gradio_client.utils crashes with "argument of type 'bool' is not
+# iterable" during get_api_info(). This wraps the affected functions to handle
+# non-dict schemas gracefully.
+import gradio_client.utils as _gcu
+
+if hasattr(_gcu, "_json_schema_to_python_type"):
+    _orig_json = _gcu._json_schema_to_python_type
+    def _safe_json_schema(schema, defs=None):
+        if not isinstance(schema, dict):
+            return "Any"
+        return _orig_json(schema, defs)
+    _gcu._json_schema_to_python_type = _safe_json_schema
+
+if hasattr(_gcu, "get_type"):
+    _orig_get_type = _gcu.get_type
+    def _safe_get_type(schema):
+        if not isinstance(schema, dict):
+            return "Any"
+        return _orig_get_type(schema)
+    _gcu.get_type = _safe_get_type
+# ─────────────────────────────────────────────────────────────────────────────
+
 import gradio as gr
 import librosa
 import librosa.display
