@@ -11,8 +11,6 @@ import io
 import os
 
 # ── Labels ───────────────────────────────────────────────────────────────────
-# ImageDataGenerator.flow_from_directory sorts classes alphabetically,
-# so this order matches the training class indices exactly.
 EMOTIONS = ["angry", "calm", "disgust", "fearful", "happy", "neutral", "sad", "surprised"]
 EMOJIS = {
     "angry": "😠", "calm": "😌", "disgust": "🤢", "fearful": "😨",
@@ -24,7 +22,7 @@ MODEL_PATHS = {
     "song":   "models/song_model.h5",
 }
 
-# ── Your CNN models ───────────────────────────────────────────────────────────
+# ── Custom CNN models ─────────────────────────────────────────────────────────
 my_models: dict = {}
 
 def load_my_models():
@@ -37,7 +35,7 @@ def load_my_models():
 
 load_my_models()
 
-# ── Pre-trained baseline (lazy load — heavy, only when user picks it) ─────────
+# ── Pre-trained baseline (lazy-loaded — large model) ──────────────────────────
 _pretrained_pipe = None
 
 def get_pretrained():
@@ -52,13 +50,8 @@ def get_pretrained():
         print("✓ Pre-trained model ready.")
     return _pretrained_pipe
 
-# ── Spectrogram pipeline (matches training exactly) ───────────────────────────
+# ── Spectrogram pipeline ──────────────────────────────────────────────────────
 def audio_to_spectrogram_image(audio_path: str) -> Image.Image:
-    """
-    Replicates Lecture_recording_processing.ipynb:
-      librosa.load → melspectrogram → power_to_db → matplotlib (3×3, axis off)
-      → PNG → PIL resize to 128×128 RGB
-    """
     y, sr = librosa.load(audio_path)
     S = librosa.feature.melspectrogram(y=y, sr=sr)
     S_dB = librosa.power_to_db(S, ref=np.max)
@@ -73,11 +66,31 @@ def audio_to_spectrogram_image(audio_path: str) -> Image.Image:
     buf.seek(0)
     return Image.open(buf).convert("RGB").resize((128, 128))
 
-# ── Inference: your CNN ───────────────────────────────────────────────────────
+# ── HTML bar chart renderer (avoids gr.Label schema bug) ──────────────────────
+def render_bar_chart(label_map: dict) -> str:
+    """Build a simple HTML bar chart of confidence scores."""
+    if not label_map:
+        return "<p style='color:#888'>No data</p>"
+    items = sorted(label_map.items(), key=lambda x: -x[1])
+    rows = []
+    for label, conf in items:
+        pct = max(0.5, conf * 100)  # min width so 0% bars are still visible
+        rows.append(
+            f"<div style='margin:6px 0;'>"
+            f"<div style='display:flex;justify-content:space-between;font-size:14px;margin-bottom:2px;'>"
+            f"<span>{label}</span><span style='color:#888;'>{conf*100:.1f}%</span>"
+            f"</div>"
+            f"<div style='background:#1f2937;border-radius:4px;height:8px;overflow:hidden;'>"
+            f"<div style='background:linear-gradient(90deg,#8b5cf6,#6366f1);width:{pct}%;height:100%;'></div>"
+            f"</div></div>"
+        )
+    return f"<div style='font-family:sans-serif;padding:8px;'>{''.join(rows)}</div>"
+
+# ── Inference: custom CNN ─────────────────────────────────────────────────────
 def predict_my_model(audio_path: str, mode: str):
     if mode not in my_models:
         missing = MODEL_PATHS[mode]
-        return None, f"⚠️ **{missing}** not found. Upload it to the `models/` folder."
+        return f"<p style='color:#fca5a5;padding:12px;'>⚠️ <b>{missing}</b> not found.<br>Upload your trained model to the <code>models/</code> folder.</p>", ""
 
     img = audio_to_spectrogram_image(audio_path)
     arr = np.expand_dims(np.array(img) / 255.0, axis=0)
@@ -87,13 +100,12 @@ def predict_my_model(audio_path: str, mode: str):
     top = EMOTIONS[top_i]
     label_map = {f"{EMOJIS[e]} {e.capitalize()}": float(p) for e, p in zip(EMOTIONS, probs)}
     headline = f"### {EMOJIS[top]} {top.capitalize()} — {float(probs[top_i]):.1%}"
-    return label_map, headline
+    return render_bar_chart(label_map), headline
 
 # ── Inference: pre-trained baseline ───────────────────────────────────────────
 def predict_pretrained(audio_path: str):
     pipe = get_pretrained()
-    results = pipe(audio_path, top_k=8)   # list of {label, score}
-    # Normalize label names to lowercase to match our EMOJIS map
+    results = pipe(audio_path, top_k=8)
     label_map = {}
     for r in results:
         name = r["label"].lower()
@@ -104,12 +116,12 @@ def predict_pretrained(audio_path: str):
     name = top["label"].lower()
     emoji = EMOJIS.get(name, "🎵")
     headline = f"### {emoji} {name.capitalize()} — {top['score']:.1%}"
-    return label_map, headline
+    return render_bar_chart(label_map), headline
 
-# ── Top-level dispatcher ──────────────────────────────────────────────────────
+# ── Dispatcher ────────────────────────────────────────────────────────────────
 def run(audio_path, model_choice):
     if audio_path is None:
-        return None, "Please record or upload audio first."
+        return "<p style='color:#fbbf24;padding:12px;'>Please record or upload audio first.</p>", ""
 
     if model_choice == "My CNN — Speech":
         return predict_my_model(audio_path, "speech")
@@ -117,17 +129,16 @@ def run(audio_path, model_choice):
         return predict_my_model(audio_path, "song")
     if model_choice == "Pre-trained (Wav2Vec2)":
         return predict_pretrained(audio_path)
+    return "<p>Unknown model.</p>", ""
 
-    return None, "Unknown model selection."
-
-# ── Compare-all mode ──────────────────────────────────────────────────────────
 def run_all(audio_path):
     if audio_path is None:
-        return None, None, None
-    speech_chart, _ = predict_my_model(audio_path, "speech") if "speech" in my_models else (None, None)
-    song_chart, _   = predict_my_model(audio_path, "song")   if "song"   in my_models else (None, None)
-    pre_chart, _    = predict_pretrained(audio_path)
-    return speech_chart, song_chart, pre_chart
+        empty = "<p style='color:#fbbf24;'>Please upload audio.</p>"
+        return empty, empty, empty
+    speech_html = predict_my_model(audio_path, "speech")[0] if "speech" in my_models else "<p style='color:#fca5a5;'>speech_model.h5 not uploaded</p>"
+    song_html   = predict_my_model(audio_path, "song")[0]   if "song"   in my_models else "<p style='color:#fca5a5;'>song_model.h5 not uploaded</p>"
+    pre_html    = predict_pretrained(audio_path)[0]
+    return speech_html, song_html, pre_html
 
 # ── Gradio UI ─────────────────────────────────────────────────────────────────
 with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
@@ -142,34 +153,32 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
                 audio_in = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Audio")
                 model_radio = gr.Radio(
                     choices=["My CNN — Speech", "My CNN — Song", "Pre-trained (Wav2Vec2)"],
-                    value="My CNN — Speech",
+                    value="Pre-trained (Wav2Vec2)",
                     label="Model",
                 )
                 run_btn = gr.Button("Detect Emotion 🔍", variant="primary")
             with gr.Column():
                 headline_out = gr.Markdown()
-                chart_out = gr.Label(num_top_classes=8, label="Confidence scores")
+                chart_out = gr.HTML(label="Confidence scores")
 
         run_btn.click(
             fn=run,
             inputs=[audio_in, model_radio],
             outputs=[chart_out, headline_out],
-            api_name="predict",
         )
 
     with gr.Tab("Compare all"):
-        gr.Markdown("Run all three models on the same audio and compare side-by-side.")
+        gr.Markdown("Run all three models on the same audio.")
         audio_in_2 = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Audio")
         run_all_btn = gr.Button("Run All Models 🆚", variant="primary")
         with gr.Row():
-            speech_chart = gr.Label(num_top_classes=8, label="My CNN — Speech")
-            song_chart   = gr.Label(num_top_classes=8, label="My CNN — Song")
-            pre_chart    = gr.Label(num_top_classes=8, label="Pre-trained Wav2Vec2")
+            speech_chart = gr.HTML(label="My CNN — Speech")
+            song_chart   = gr.HTML(label="My CNN — Song")
+            pre_chart    = gr.HTML(label="Pre-trained Wav2Vec2")
         run_all_btn.click(
             fn=run_all,
             inputs=[audio_in_2],
             outputs=[speech_chart, song_chart, pre_chart],
-            api_name="predict_all",
         )
 
     gr.Markdown(
@@ -180,4 +189,4 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch(ssr_mode=False)
+    demo.launch()
