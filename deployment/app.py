@@ -150,7 +150,12 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
                 headline_out = gr.Markdown()
                 chart_out = gr.Label(num_top_classes=8, label="Confidence scores")
 
-        run_btn.click(run, [audio_in, model_radio], [chart_out, headline_out])
+        run_btn.click(
+            fn=run,
+            inputs=[audio_in, model_radio],
+            outputs=[chart_out, headline_out],
+            api_name="predict",
+        )
 
     with gr.Tab("Compare all"):
         gr.Markdown("Run all three models on the same audio and compare side-by-side.")
@@ -160,7 +165,12 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
             speech_chart = gr.Label(num_top_classes=8, label="My CNN — Speech")
             song_chart   = gr.Label(num_top_classes=8, label="My CNN — Song")
             pre_chart    = gr.Label(num_top_classes=8, label="Pre-trained Wav2Vec2")
-        run_all_btn.click(run_all, [audio_in_2], [speech_chart, song_chart, pre_chart])
+        run_all_btn.click(
+            fn=run_all,
+            inputs=[audio_in_2],
+            outputs=[speech_chart, song_chart, pre_chart],
+            api_name="predict_all",
+        )
 
     gr.Markdown(
         "---\n"
@@ -170,4 +180,4 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(ssr_mode=False)
