@@ -65,14 +65,25 @@ _pretrained_pipe = None
 def get_pretrained():
     global _pretrained_pipe
     if _pretrained_pipe is None:
-        print("Loading pre-trained Wav2Vec2 model (first run only)...")
+        print("Loading pre-trained SUPERB HuBERT model (first run only)...")
         from transformers import pipeline
+        # Swapped from ehcalabres/wav2vec2 (returned ~uniform probs on real-world
+        # audio) to SUPERB HuBERT, which is much more robust outside RAVDESS.
+        # Trade-off: only 4 emotions (neu/hap/ang/sad) instead of 8.
         _pretrained_pipe = pipeline(
             "audio-classification",
-            model="ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition",
+            model="superb/hubert-large-superb-er",
         )
         print("✓ Pre-trained model ready.")
     return _pretrained_pipe
+
+# Map SUPERB's short codes to our full-name + emoji UI labels
+_SUPERB_LABEL_MAP = {
+    "neu": ("neutral", "😐"),
+    "hap": ("happy",   "😄"),
+    "ang": ("angry",   "😠"),
+    "sad": ("sad",     "😢"),
+}
 
 # ── Spectrogram pipeline ──────────────────────────────────────────────────────
 def audio_to_spectrogram_image(audio_path: str) -> Image.Image:
@@ -147,17 +158,16 @@ def predict_pretrained(audio_path: str):
     audio = audio / (np.abs(audio).max() + 1e-9)
 
     # Pass as raw array with explicit sampling rate (bypasses pipeline's file decoding)
-    results = pipe({"sampling_rate": 16000, "raw": audio}, top_k=8)
+    results = pipe({"sampling_rate": 16000, "raw": audio}, top_k=4)
 
     label_map = {}
     for r in results:
-        name = r["label"].lower()
-        emoji = EMOJIS.get(name, "🎵")
+        code = r["label"].lower()
+        name, emoji = _SUPERB_LABEL_MAP.get(code, (code, "🎵"))
         label_map[f"{emoji} {name.capitalize()}"] = float(r["score"])
 
     top = max(results, key=lambda r: r["score"])
-    name = top["label"].lower()
-    emoji = EMOJIS.get(name, "🎵")
+    name, emoji = _SUPERB_LABEL_MAP.get(top["label"].lower(), (top["label"], "🎵"))
     headline = f"### {emoji} {name.capitalize()} — {top['score']:.1%}"
     return render_bar_chart(label_map), headline
 
@@ -170,7 +180,7 @@ def run(audio_path, model_choice):
         return predict_my_model(audio_path, "speech")
     if model_choice == "My CNN — Song":
         return predict_my_model(audio_path, "song")
-    if model_choice == "Pre-trained (Wav2Vec2)":
+    if model_choice == "Pre-trained (HuBERT)":
         return predict_pretrained(audio_path)
     return "<p>Unknown model.</p>", ""
 
@@ -187,7 +197,7 @@ def run_all(audio_path):
 with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
     gr.Markdown(
         "# 🎙️ Emotion Recognition from Audio\n"
-        "Compare a custom CNN trained on mel spectrograms against a pre-trained Wav2Vec2 baseline."
+        "Compare a custom CNN trained on mel spectrograms against a pre-trained HuBERT baseline."
     )
 
     with gr.Tab("Single model"):
@@ -195,8 +205,8 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
             with gr.Column():
                 audio_in = gr.Audio(sources=["microphone", "upload"], type="filepath", label="Audio")
                 model_radio = gr.Radio(
-                    choices=["My CNN — Speech", "My CNN — Song", "Pre-trained (Wav2Vec2)"],
-                    value="Pre-trained (Wav2Vec2)",
+                    choices=["My CNN — Speech", "My CNN — Song", "Pre-trained (HuBERT)"],
+                    value="Pre-trained (HuBERT)",
                     label="Model",
                 )
                 run_btn = gr.Button("Detect Emotion 🔍", variant="primary")
@@ -217,7 +227,7 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
         with gr.Row():
             speech_chart = gr.HTML(label="My CNN — Speech")
             song_chart   = gr.HTML(label="My CNN — Song")
-            pre_chart    = gr.HTML(label="Pre-trained Wav2Vec2")
+            pre_chart    = gr.HTML(label="Pre-trained HuBERT")
         run_all_btn.click(
             fn=run_all,
             inputs=[audio_in_2],
@@ -226,9 +236,9 @@ with gr.Blocks(title="Emotion Recognizer", theme=gr.themes.Soft()) as demo:
 
     gr.Markdown(
         "---\n"
-        "**My CNN:** trained on mel spectrograms (128 × 128) — Speech 63 % · Song 78 %  \n"
-        "**Baseline:** `ehcalabres/wav2vec2-lg-xlsr-en-speech-emotion-recognition` (fine-tuned on RAVDESS)  \n"
-        "**Emotions:** angry · calm · disgust · fearful · happy · neutral · sad · surprised"
+        "**My CNN:** trained on mel spectrograms (128 × 128), 8 emotions — Speech 63 % · Song 78 %  \n"
+        "**Baseline:** `superb/hubert-large-superb-er` (SUPERB benchmark, 4 emotions: neutral, happy, angry, sad)  \n"
+        "*Tip: speak loudly with exaggerated emotion for ~3 seconds for best results.*"
     )
 
 if __name__ == "__main__":
